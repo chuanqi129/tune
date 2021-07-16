@@ -78,7 +78,7 @@ class TensorflowConfig(BackendConfig):
     name: str = "tensorflow"
     use_xla: bool = False
     use_saved_model_format: bool = False
-    eager_mode: bool = True
+    eager_mode: bool = False
     experimental_compiler: Optional[bool] = None
 
     @staticmethod
@@ -133,13 +133,6 @@ class TensorflowBackend(Backend[TensorflowConfig]):
         super().configure(config)
 
         LOGGER.info("Configuring TensorFlow Benchmark:")
-
-        # Eager execution should only be tuned for TensorFlow not for XLA
-        if config.name == "tensorflow" and not config.eager_mode:
-            LOGGER.info(
-                "\t+ Disabling eager execution"
-            )
-            tf.compat.v1.disable_eager_execution()
 
         if config.num_threads is not None:
             if tf.config.threading.get_intra_op_parallelism_threads() != config.num_threads:
@@ -206,7 +199,6 @@ class TensorflowBackend(Backend[TensorflowConfig]):
             return self._run_xla(config, is_reference)
 
     def _run_tf(self, config: BenchmarkConfig, is_reference: bool) -> Tuple[Benchmark, np.ndarray]:
-        LOGGER.info("Running TensorFlow Eager benchmark")
         benchmark = Benchmark()
 
         dummy_inputs = self._get_dummy_inputs(
@@ -228,14 +220,24 @@ class TensorflowBackend(Backend[TensorflowConfig]):
             # model_f = lambda x: self.model(**x).popitem()[1] \
             #     if config.backend.use_saved_model_format else \
             #     lambda x: self.model(x).last_hidden_state
-
-            @tf.function(experimental_compile=config.backend.experimental_compiler)
-            def model_f(inputs):
-                # SavedModel concrete function needs unwrapped arguments ...
-                if config.backend.use_saved_model_format:
-                    return self.model(**inputs).popitem()[1]
-                else:
-                    return self.model(inputs).last_hidden_state
+            if config.backend.eager_mode:
+                LOGGER.info("Running TensorFlow Eager benchmark")
+                def model_f(inputs):
+                    # SavedModel concrete function needs unwrapped arguments ...
+                    if config.backend.use_saved_model_format:
+                        LOGGER.info("Please note that saved model format will enable graph mode test!!")
+                        return self.model(**inputs).popitem()[1]
+                    else:
+                        return self.model(inputs).last_hidden_state
+            else:
+                LOGGER.info("Running TensorFlow Graph benchmark")
+                @tf.function
+                def model_f(inputs):
+                    # SavedModel concrete function needs unwrapped arguments ...
+                    if config.backend.use_saved_model_format:
+                        return self.model(**inputs).popitem()[1]
+                    else:
+                        return self.model(inputs).last_hidden_state
 
             # Warmup
             outputs = []
