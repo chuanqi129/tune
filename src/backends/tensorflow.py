@@ -29,11 +29,13 @@ from backends import Backend, BackendConfig
 from benchmark import Benchmark
 from config import BenchmarkConfig
 from utils import SEC_TO_NS_SCALE
+import os
 
 BACKEND_NAME = "tensorflow"
 
 SAVED_MODEL_PATH = "saved_model"
 SAVED_MODEL_TUNE_FLAG = "tune"
+PROF_PATH = "/home/sdp/chuanqiw/tune/profiling_log_" + str(os.getpid())
 
 LOGGER = getLogger("tensorflow")
 
@@ -245,6 +247,12 @@ class TensorflowBackend(Backend[TensorflowConfig]):
                     with benchmark.track():
                         model_f(inputs)
 
+                # Run Profiling
+                options = tf.profiler.experimental.ProfilerOptions(host_tracer_level = 3, python_tracer_level = 1, device_tracer_level = 1)
+                tf.profiler.experimental.start(PROF_PATH, options = options)
+                model_f(inputs)
+                tf.profiler.experimental.stop()
+
                 benchmark.finalize(benchmark_duration_ns)
 
             return benchmark, np.stack(outputs)
@@ -309,6 +317,11 @@ class TensorflowBackend(Backend[TensorflowConfig]):
                     while sum(benchmark.latencies) < benchmark_duration_ns:
                         with benchmark.track():
                             model_f(inputs)
+                    # Run Profiling
+                    options = tf.profiler.experimental.ProfilerOptions(host_tracer_level = 3, python_tracer_level = 1, device_tracer_level = 1)
+                    tf.profiler.experimental.start(PROF_PATH, options = options)
+                    model_f(inputs)
+                    tf.profiler.experimental.stop()
 
                     benchmark.finalize(benchmark_duration_ns)
         return benchmark, np.stack(outputs)
